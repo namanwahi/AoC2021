@@ -22,7 +22,6 @@ ventLine = do { x1 <- integer; char ','; y1 <- integer; string " -> "; x2 <- int
 ventLines :: Parser [(Point, Point)]
 ventLines = sepBy ventLine (char '\n')
 
--------------------------------------------------------------------------------------------
 -- get integers in a range maintaining the order. (numsBetween 0 5 = [0,1,2,3,4,5], numsBetween 6 3 = [6,5,4,3])
 numsBetween :: Int -> Int -> [Int]
 numsBetween x y = if x < y then [x..y] else reverse [y..x]
