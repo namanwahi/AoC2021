@@ -2,10 +2,10 @@ module Main where
 
 import Data.Either
 
-import Text.Parsec
-import Text.Parsec.String
-import Text.Parsec.Char
-import Text.Parsec.Combinator
+import Text.Parsec (parse, ParseError, many)
+import Text.Parsec.String (Parser)
+import Text.Parsec.Char (digit, char, string)
+import Text.Parsec.Combinator (sepBy)
 
 type Point = (Int, Int)
 
@@ -22,29 +22,31 @@ ventLine = do { x1 <- integer; char ','; y1 <- integer; string " -> "; x2 <- int
 ventLines :: Parser [(Point, Point)]
 ventLines = sepBy ventLine (char '\n')
 
--- Part 1
+-------------------------------------------------------------------------------------------
+-- get integers in a range maintaining the order. (numsBetween 0 5 = [0,1,2,3,4,5], numsBetween 6 3 = [6,5,4,3])
+numsBetween :: Int -> Int -> [Int]
+numsBetween x y = if x < y then [x..y] else reverse [y..x]
 
 -- Convert non-diagonal vent line from (startPoint, endPoint) format to a list of all points within
 pointsWithin :: (Point, Point) -> [Point]
 pointsWithin ((x1, y1), (x2, y2))
-    | x1 == x2 = map (\y -> (x1, y)) [(min y1 y2)..(max y1 y2)]
-    | y1 == y2 = map (\x -> (x, y1)) [(min x1 x2)..(max x1 x2)]
-    | otherwise = []
+    | x1 == x2 = map (\y -> (x1, y)) (numsBetween y1 y2)
+    | y1 == y2 = map (\x -> (x, y1)) (numsBetween x1 x2)
+    -- added for part 2 - diagonal points
+    | otherwise = zip (numsBetween x1 x2) (numsBetween y1 y2)
 
 -- Maps and concatenates all the points within non diagonal lines
 allPointsWithin :: [(Point, Point)] -> [Point]
 allPointsWithin = concat . (map pointsWithin)
 
--- Finds overlapping points
+-- Finds overlapping points. Slow O(n^2) -- could optimize with Data.Map
 overlappingPoints :: [Point] -> [Point]
 overlappingPoints points = overlappingPoints' points []
     where
         overlappingPoints' [] overlappingAcc = overlappingAcc
         overlappingPoints' (p : ps) overlappingAcc
-            | duplicatesInTail = overlappingPoints' (filter (/=p) ps) (p : overlappingAcc)
+            | p `elem` ps  = overlappingPoints' (filter (/=p) ps) (p : overlappingAcc)
             | otherwise = overlappingPoints' ps overlappingAcc
-            where
-                duplicatesInTail = p `elem` ps
 
 main :: IO ()
 main = do
