@@ -21,14 +21,14 @@ findLowPoints heightMap = (filter (\(x, y) -> all (>(sureLookUp (x, y))) (adjace
         adjacentHeights (x, y) = map (\p -> Map.findWithDefault 10 p heightMap) [(x, y + 1), (x, y - 1), (x + 1, y), (x - 1, y)]
         sureLookUp point = fromJust $ (Map.lookup point heightMap)
 
--- get the total risk level
+-- get the total risk level given a height map
 totalRiskLevel :: Map (Int, Int) Int -> Int
 totalRiskLevel heightMap = (sum . (map (+1)) . (map sureLookUp) . findLowPoints) heightMap
     where
         sureLookUp point = fromJust $ (Map.lookup point heightMap)
 
 -- part 2
--- find basin low point
+-- find basin low point guven a height map and a point
 findBasin :: Map (Int, Int) Int -> (Int, Int) -> Maybe (Int, Int)
 findBasin heightMap point@(x, y)
     | currentHeight == 9 = Nothing
