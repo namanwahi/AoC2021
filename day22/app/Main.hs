@@ -63,13 +63,12 @@ parseInstruction = do
     zRange <- parseRange
     return (Instruction{isOn=(onOrOff == "on"), cube=Cube{xBounds=xRange, yBounds=yRange, zBounds=zRange}})
 
--- instructions intersect
+-- do cubes intersect (not excluding edge piece)
 doIntersect :: Cube -> Cube -> Bool
-doIntersect c1 c2 = (xHigh1 >= xLow2) && (xHigh2 >= xLow1) && (yHigh1 >= yLow2) && (yHigh2 >= yLow1) && (zHigh1 >= zLow2) && (zHigh2 >= zLow1)
+doIntersect c1 c2 = (xHigh1 > xLow2) && (xHigh2 > xLow1) && (yHigh1 > yLow2) && (yHigh2 > yLow1) && (zHigh1 > zLow2) && (zHigh2 > zLow1)
     where
         Cube{xBounds=(xLow1, xHigh1), yBounds=(yLow1, yHigh1), zBounds=(zLow1, zHigh1)} = c1
         Cube{xBounds=(xLow2, xHigh2), yBounds=(yLow2, yHigh2), zBounds=(zLow2, zHigh2)} = c2
-
 
 -- does first cube contain second
 contains :: Cube -> Cube -> Bool
@@ -78,64 +77,41 @@ contains c1 c2 = (xLow1 <= xLow2) && (yLow1 <= yLow2) &&  (zLow1 <= zLow2) && (x
         Cube{xBounds=(xLow1, xHigh1), yBounds=(yLow1, yHigh1), zBounds=(zLow1, zHigh1)} = c1
         Cube{xBounds=(xLow2, xHigh2), yBounds=(yLow2, yHigh2), zBounds=(zLow2, zHigh2)} = c2
 
--- decompose cubes into non overlapping regions
-decomposeCubes :: [Cube] -> [Cube]
-decomposeCubes cubes
-    | (length cubes) /= (length (nub cubes)) = error "duplicate cubes"
-decomposeCubes cubes
-    | null intersectPairs = cubes
-    | otherwise = []
-    where
-        intersectPairs = [ (c1, c2) | c1<-cubes, c2<-cubes, c1 /= c2, doIntersect c1 c2]
-        (c1, c2) = head intersectPairs
+contained:: Cube -> Cube -> Bool
+contained = flip contains
 
-decompose:: Cube -> Cube -> [Cube]
-decompose c1 c2
-    | not (doIntersect c1 c2) = error "dont intersect"
-    | otherwise = nub allCubes
+findCompositeCubes :: [(Int, Int)] -> [(Int, Int)] -> [(Int, Int)] -> Cube -> Set Cube
+findCompositeCubes allXBounds allYBounds allZBounds cube = Set.fromList [Cube{xBounds=xb, yBounds=yb, zBounds=zb} | xb<-containedXBounds, yb<-containedYBounds, zb<-containedZBounds]
     where
-        allCubes = [Cube{xBounds=xb, yBounds=yb, zBounds=zb} | xb<-newXRanges, yb<-newYRanges, zb<-newZRanges]
-        newXRanges = splitRanges (xBounds c1) (xBounds c2)
-        newYRanges = splitRanges (yBounds c1) (yBounds c2)
-        newZRanges = splitRanges (zBounds c1) (zBounds c2)
+        containedXBounds = filter (isRangeContained (xBounds cube)) allXBounds
+        containedYBounds = filter (isRangeContained (yBounds cube)) allYBounds
+        containedZBounds = filter (isRangeContained (zBounds cube)) allZBounds
+        isRangeContained (outerLow, outerHigh) (innerLow, innerHigh) = (outerLow <= innerLow) && (innerHigh <= outerHigh)
 
-
-splitRanges :: (Int, Int) -> (Int, Int) -> [(Int,Int)]
-splitRanges r1 r2
-    | r1 == r2 = [r1, r2]
-splitRanges (low1, high1) (low2, high2) = sortedInclusiveBounds
+updateLights :: (Cube -> Set Cube) -> Set Cube -> Instruction -> Set Cube
+updateLights splitCube litCubes instruction
+    | isOn instruction = Set.union instructionCubes litCubes
+    | otherwise        = Set.difference litCubes instructionCubes
     where
-        intersectingPoints = union [low1..high1] [low2..high2]
-        minIntersect = minimum intersectingPoints
-        maxIntersect = maximum intersectingPoints
-        sortedBoundPoints = (sort . nub) [low1, high1, low2, high2, minIntersect, maxIntersect]
-        sortedInclusiveBounds = zip sortedBoundPoints (tail sortedBoundPoints)
+        instructionCubes = (splitCube . cube) instruction
 
-findCompositeCubes :: Cube -> [Cube] -> [Cube]
-findCompositeCubes cube allDecomposedCubes
-    | vol /= decompVol = error ("interval composition error" ++ (show vol) ++ " " ++ (show decompVol))
-    | otherwise = decomped
-    where
-        decomped = filter (\c -> contains cube c) allDecomposedCubes
-        vol = volume cube
-        decompVol = sum $ map volume decomped
 
 main :: IO ()
 main = do
-    input <- readFile "app/test_input.txt"
+    input <- readFile "app/input.txt"
     let instructions = (map (regularParse parseInstruction) . lines) input
     let cubes = map cube instructions
-    --mapM_ (putStrLn . show) cubes
-    let c1 = head cubes
-    let c2 = head (tail cubes)
-    let decomped = decompose c1 c2
-    mapM_ print decomped
-    print $ length decomped
-    print c1
-    print c2
-    print "------------"
-    print $ splitRanges (-5, 47) (-44, 5)
-    mapM_ print (findCompositeCubes c1 decomped)
+    let xCoords = (sort . Set.toList . Set.unions . map ((\(x1, x2) -> Set.fromList [x1, x2]) . xBounds)) cubes
+    let yCoords = (sort . Set.toList . Set.unions . map ((\(y1, y2) -> Set.fromList [y1, y2]) . yBounds)) cubes
+    let zCoords = (sort . Set.toList . Set.unions . map ((\(z1, z2) -> Set.fromList [z1, z2]) . zBounds)) cubes
+
+    let allXBounds = zip xCoords (tail xCoords)
+    let allYBounds = zip yCoords (tail yCoords)
+    let allZBounds = zip zCoords (tail zCoords)
+    let splitCube = findCompositeCubes allXBounds allYBounds allZBounds
+
+    -- let finalLitCubes = foldl (updateLights splitCube) Set.empty instructions
+    print $ (\l -> l !! 10) $ map (Set.size . splitCube) cubes
     {--
     print $ splitRanges (10, 15) (12, 100)
     print $ splitRanges (4, 10) (3, 6)
@@ -144,4 +120,4 @@ main = do
     print $ splitRanges (2, 5) (0, 10)
     print $ splitRanges (2, 5) (5, 10)
     print $ splitRanges (2, 5) (5, 6)
---}
+    --}
