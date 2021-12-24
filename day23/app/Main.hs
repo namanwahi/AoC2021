@@ -77,10 +77,12 @@ getPossibleHallwayMoves start@(x, y) burrow@(Burrow{positionMap=pmap})
     -- blocked by something above
     | y == -2 && (isOccupied burrow (x, -1)) = []
     -- already in the right place
+    | y == -1 && (x == getDestinationRoomX positionVal && positionVal == positionBelowVal) = []
     | y == -2 && (x == getDestinationRoomX positionVal) = []
     | otherwise = (map (\x -> (start, (x, 0))). filter isNotBlocked) freeHallwayXs
     where
         positionVal = atPosition burrow start
+        positionBelowVal = atPosition burrow (x, y-1)
         occupiedHallwayXs = (map fst. filter (\(_, y) -> y == 0) . Map.keys) pmap
         freeHallwayXs = (map fst validHallwayCoords) \\ occupiedHallwayXs
         isNotBlocked freeX
@@ -102,12 +104,16 @@ targetBurrow = Burrow{positionMap=Map.fromList targetPositions}
 getRoomMove :: Point -> Burrow -> Maybe Move
 getRoomMove start@(x, 0) burrow@(Burrow{positionMap=pmap})
     -- neither occupied
-    | isFree burrow (newX, -2) && isFree burrow (newX, -1) = Just (start, (newX, -2))
+    | isNotBlocked && isFree burrow (newX, -2) && isFree burrow (newX, -1) = Just (start, (newX, -2))
     -- bottom occupied and same val
-    | (atPosition burrow (newX, -2) == valAtStart) && isFree burrow (newX, -1) = Just (start, (newX, -1))
+    | isNotBlocked && (atPosition burrow (newX, -2) == valAtStart) && isFree burrow (newX, -1) = Just (start, (newX, -1))
     where
         valAtStart = fromJust $ Map.lookup (x, 0) pmap
         newX = getDestinationRoomX valAtStart
+        occupiedHallwayXs = (map fst. filter (\(_, y) -> y == 0) . Map.keys) pmap
+        isNotBlocked
+            | x < newX = (null . filter (\occupiedX -> x < occupiedX && occupiedX < newX)) occupiedHallwayXs
+            | newX < x = (null . filter (\occupiedX -> newX < occupiedX && occupiedX < x)) occupiedHallwayXs
 getRoomMove _ _ = Nothing
 
 getBestSequence :: Burrow -> (Int, [Burrow])
