@@ -76,8 +76,11 @@ getPossibleHallwayMoves start@(x, y) burrow@(Burrow{positionMap=pmap})
     | y == 0 = []
     -- blocked by something above
     | y == -2 && (isOccupied burrow (x, -1)) = []
+    -- already in the right place
+    | y == -2 && (x == getDestinationRoomX positionVal) = []
     | otherwise = (map (\x -> (start, (x, 0))). filter isNotBlocked) freeHallwayXs
     where
+        positionVal = atPosition burrow start
         occupiedHallwayXs = (map fst. filter (\(_, y) -> y == 0) . Map.keys) pmap
         freeHallwayXs = (map fst validHallwayCoords) \\ occupiedHallwayXs
         isNotBlocked freeX
@@ -107,13 +110,14 @@ getRoomMove start@(x, 0) burrow@(Burrow{positionMap=pmap})
         newX = getDestinationRoomX valAtStart
 getRoomMove _ _ = Nothing
 
-getBestSequence :: Burrow -> (Int, [Move])
+getBestSequence :: Burrow -> (Int, [Burrow])
 getBestSequence = getBestSequence' (0, [])
     where
-        getBestSequence' (totalEnergy, moves) burrow@(Burrow{positionMap=pmap})
-            | burrow == targetBurrow = (totalEnergy, moves)
-            | null allMoves          = (maxBound, moves)
-            | otherwise              = traceShow (length allMoves) (minimum . map (\m -> getBestSequence' (totalEnergy + moveEnergy m burrow, m : moves) (applyMove m burrow))) allMoves
+        getBestSequence' (totalEnergy, burrows) burrow@(Burrow{positionMap=pmap})
+            | length burrows /= length (nub burrows) = error ("duplicate burrows:\n" ++ (show (reverse burrows)))
+            | burrow == targetBurrow = (totalEnergy, burrows)
+            | null allMoves          = (maxBound, burrows)
+            | otherwise              = (minimum . map (\m -> let newBurrow = applyMove m burrow in getBestSequence' (totalEnergy + moveEnergy m burrow, newBurrow: burrows) newBurrow)) allMoves
             where
                 hallwayMoves = (concat . map (\start -> getPossibleHallwayMoves start burrow). Map.keys) pmap
                 downMoves = (catMaybes . map (\start -> getRoomMove start burrow) . Map.keys) pmap
