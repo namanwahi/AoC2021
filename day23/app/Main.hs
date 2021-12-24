@@ -1,6 +1,7 @@
 module Main where
 
 import Debug.Trace
+import Data.Maybe
 import Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -9,7 +10,7 @@ type Point = (Int, Int)
 
 data Burrow = Burrow {
     positionMap :: Map Point Char
-}
+} deriving (Eq, Ord)
 
 type Move = (Point, Point)
 
@@ -34,9 +35,10 @@ applyMove (start, end) burrow@(Burrow{positionMap=pmap})
         valAtStart = atPosition burrow start
         valAtEnd   = atPosition burrow end
 
-moveEnergy :: Move -> Char -> Int
-moveEnergy (start, finish) c = (distance start finish) * scaleFactor c
+moveEnergy :: Move -> Burrow -> Int
+moveEnergy (start, finish) burrow@(Burrow{positionMap=pmap}) = (distance start finish) * scaleFactor valAtStart
     where
+        valAtStart = atPosition burrow start
         distance (x1, y1) (x2, y2) = (abs (x1 - x2)) + (abs (y1 - y2))
         scaleFactor 'A' = 1
         scaleFactor 'B' = 10
@@ -45,8 +47,14 @@ moveEnergy (start, finish) c = (distance start finish) * scaleFactor c
 
 atPosition :: Burrow -> Point -> Char
 atPosition (Burrow{positionMap=pmap}) p
-    | not (p `elem` allPositions) = error "invalid lookup"
+    | not (p `elem` allPositions) = error ("invalid lookup" ++ show p)
     | otherwise                   = Map.findWithDefault '.' p pmap
+
+isOccupied :: Burrow -> Point -> Bool
+isOccupied burr p = (atPosition burr p) /= '.'
+
+isFree :: Burrow -> Point -> Bool
+isFree burr p = (atPosition burr p) == '.'
 
 roomCoords :: [Point]
 roomCoords = (concat . map (\x -> [(x, -1), (x, -2)])) [2, 4, 6, 8]
@@ -67,7 +75,7 @@ getPossibleHallwayMoves start@(x, y) burrow@(Burrow{positionMap=pmap})
     -- alreadt at the top
     | y == 0 = []
     -- blocked by something above
-    | y == -2 && (atPosition burrow (x, -1) /= '.') = []
+    | y == -2 && (isOccupied burrow (x, -1)) = []
     | otherwise = (map (\x -> (start, (x, 0))). filter isNotBlocked) freeHallwayXs
     where
         occupiedHallwayXs = (map fst. filter (\(_, y) -> y == 0) . Map.keys) pmap
@@ -76,19 +84,53 @@ getPossibleHallwayMoves start@(x, y) burrow@(Burrow{positionMap=pmap})
             | freeX > x = (null . filter (\occupiedX -> x < occupiedX && occupiedX < freeX)) occupiedHallwayXs
             | freeX < x = (null . filter (\occupiedX -> freeX < occupiedX && occupiedX < x)) occupiedHallwayXs
 
+getDestinationRoomX :: Char -> Int
+getDestinationRoomX 'A' = 2
+getDestinationRoomX 'B' = 4
+getDestinationRoomX 'C' = 6
+getDestinationRoomX 'D' = 8
+
+
+targetBurrow :: Burrow
+targetBurrow = Burrow{positionMap=Map.fromList targetPositions}
+    where
+        targetPositions = [((2, -2), 'A'), ((2, -1), 'A'), ((4, -2), 'B'), ((4, -1), 'B'), ((6, -2), 'C'), ((6, -1), 'C'), ((8, -2), 'D'), ((8, -1), 'D')]
+
+getRoomMove :: Point -> Burrow -> Maybe Move
+getRoomMove start@(x, 0) burrow@(Burrow{positionMap=pmap})
+    -- neither occupied
+    | isFree burrow (newX, -2) && isFree burrow (newX, -1) = Just (start, (newX, -2))
+    -- bottom occupied and same val
+    | (atPosition burrow (newX, -2) == valAtStart) && isFree burrow (newX, -1) = Just (start, (newX, -1))
+    where
+        valAtStart = fromJust $ Map.lookup (x, 0) pmap
+        newX = getDestinationRoomX valAtStart
+getRoomMove _ _ = Nothing
+
+getBestSequence :: Burrow -> (Int, [Move])
+getBestSequence = getBestSequence' (0, [])
+    where
+        getBestSequence' (totalEnergy, moves) burrow@(Burrow{positionMap=pmap})
+            | burrow == targetBurrow = (totalEnergy, moves)
+            | null allMoves          = (maxBound, moves)
+            | otherwise              = traceShow (length allMoves) (minimum . map (\m -> getBestSequence' (totalEnergy + moveEnergy m burrow, m : moves) (applyMove m burrow))) allMoves
+            where
+                hallwayMoves = (concat . map (\start -> getPossibleHallwayMoves start burrow). Map.keys) pmap
+                downMoves = (catMaybes . map (\start -> getRoomMove start burrow) . Map.keys) pmap
+                allMoves = downMoves ++ hallwayMoves
 
 
 main :: IO ()
 main = do
     print allPositions
     let startingPositions = [((2, -2), 'A'), ((2, -1), 'B'), ((4, -2), 'D'), ((4, -1), 'C'), ((6, -2), 'C'), ((6, -1), 'B'), ((8, -2), 'A'), ((8, -1), 'D')]
-    let targetPositions = [((2, -2), 'A'), ((2, -1), 'A'), ((4, -2), 'B'), ((4, -1), 'B'), ((6, -2), 'C'), ((6, -1), 'C'), ((8, -2), 'D'), ((8, -1), 'D')]
     let initialBurrow = Burrow{positionMap=Map.fromList startingPositions}
-    let targetBurrow = Burrow{positionMap=Map.fromList targetPositions}
     print initialBurrow
     let moveApllied = applyMove ((2, -1), (5, 0)) initialBurrow
-    print moveApllied
-    print $ validHallwayCoords
-    print $ getPossibleHallwayMoves (2, -1) initialBurrow
-    print $ getPossibleHallwayMoves (6, -1) moveApllied
-    print $ getPossibleHallwayMoves (2, -2) moveApllied
+    --print moveApllied
+    --print $ validHallwayCoords
+    --print $ getPossibleHallwayMoves (2, -2) initialBurrow
+   -- print $ getPossibleHallwayMoves (2, -1) initialBurrow
+    --print $ getPossibleHallwayMoves (6, -1) moveApllied
+    --print $ getPossibleHallwayMoves (2, -2) moveApllied
+    print $ getBestSequence initialBurrow
