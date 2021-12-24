@@ -50,9 +50,8 @@ lookupRisk (x, y) (RiskMap coordToRisk maxX maxY) = last $ take (xQuot + yQuot +
 
 -- dijkstra path finding algorith,
 dijkstra :: RiskMap -> Point -> Point -> Int
-dijkstra riskMap@(RiskMap coordToRisk maxX maxY) start target = dijkstra' (MinPQueue.singleton (0, 0) 0) initialDist
+dijkstra riskMap@(RiskMap coordToRisk maxX maxY) start target = dijkstra' (MinPQueue.singleton (0, 0) 0) (Map.singleton (0, 0) 0)
     where
-        initialDist = Map.unions $ (Map.singleton (0, 0) 0) : [Map.singleton p (maxBound::Int) | p <- nonSourceNodes]
         nonSourceNodes = filter (/=(0, 0)) $ [(x, y) | x<-[0..maxX], y<-[0..maxY]]
         dijkstra' pQueue dist
             | u == target = distToU
@@ -66,7 +65,7 @@ dijkstra riskMap@(RiskMap coordToRisk maxX maxY) start target = dijkstra' (MinPQ
                     | point `elem` (MinPQueue.keysU pQueue) = MinPQueue.mapWithKey (\p oldPriority -> if p == point then priority else oldPriority) pQueue
                     | otherwise = MinPQueue.insert point priority pQueue
                 updateState v (pq, d)
-                    | alt < (sureLookup v d) = (updatePriority v alt pq, Map.insert v alt d)
+                    | alt < (Map.findWithDefault (maxBound::Int) v d) = (updatePriority v alt pq, Map.insert v alt d)
                     | otherwise = (pq, d)
                     where
                         alt = distToU + (lookupRisk v riskMap)
