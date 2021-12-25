@@ -106,22 +106,24 @@ getDestinationRoomX 'D' = 8
 targetBurrow :: Burrow
 targetBurrow = Burrow{positionMap=Map.fromList targetPositions}
     where
-        targetPositions = [((2, -2), 'A'), ((2, -1), 'A'), ((4, -2), 'B'), ((4, -1), 'B'), ((6, -2), 'C'), ((6, -1), 'C'), ((8, -2), 'D'), ((8, -1), 'D')]
+        targetPositions = (concat . map (\c -> zip (zip (repeat $ getDestinationRoomX c) [-2..(-1)]) (repeat c))) ['A', 'B', 'C', 'D']
 
 getRoomMove :: Point -> Burrow -> Maybe Move
 getRoomMove start@(x, 0) burrow@(Burrow{positionMap=pmap})
-    -- neither occupied
-    | isNotBlocked && isFree burrow (newX, -2) && isFree burrow (newX, -1) = Just (start, (newX, -2))
-    -- bottom occupied and same val
-    | isNotBlocked && (atPosition burrow (newX, -2) == valAtStart) && isFree burrow (newX, -1) = Just (start, (newX, -1))
+    | isNotBlockedInHallway && allCorrect = Just (start, (newX, -2 + length occupants))
     where
         valAtStart = fromJust $ Map.lookup (x, 0) pmap
         newX = getDestinationRoomX valAtStart
+
+        occupants = (filter (/= '.') . map (\y -> atPosition burrow (newX, y))) [-2..(-1)]
+        allCorrect = all (\c -> getDestinationRoomX c == newX) occupants
+
         occupiedHallwayXs = (map fst. filter (\(_, y) -> y == 0) . Map.keys) pmap
-        isNotBlocked
+        isNotBlockedInHallway
             | x < newX = (null . filter (\occupiedX -> x < occupiedX && occupiedX < newX)) occupiedHallwayXs
             | newX < x = (null . filter (\occupiedX -> newX < occupiedX && occupiedX < x)) occupiedHallwayXs
 getRoomMove _ _ = Nothing
+
 {--
 getBestSequence :: Burrow -> (Int, [Burrow])
 getBestSequence = getBestSequence' (0, [])
@@ -168,7 +170,7 @@ getBestSequence initialBurrow@(Burrow{positionMap=pmap}) = dijkstra' (MinPQueue.
                 (pQueue'', dist', prev') = foldr updateState (pQueue', dist, prev) vs
 
                 updateState v (pq, d, p)
-                    | alt < (Map.findWithDefault (maxBound::Int) v d) = (updatePriority v alt pq, Map.insert v alt d, Map.insert v u p)
+                    | alt <= (Map.findWithDefault (maxBound::Int) v d) = (updatePriority v alt pq, Map.insert v alt d, Map.insert v u p)
                     | otherwise = (pq, d, p)
                     where
                         alt = distToU + (fromJust $ lookup v vsAndEnergy)
@@ -177,11 +179,13 @@ getBestSequence initialBurrow@(Burrow{positionMap=pmap}) = dijkstra' (MinPQueue.
                     | point `elem` (MinPQueue.keysU pQueue) = MinPQueue.mapWithKey (\p oldPriority -> if p == point then priority else oldPriority) pQueue
                     | otherwise = MinPQueue.insert point priority pQueue
 
+
 main :: IO ()
 main = do
     print allPositions
-    --let startingPositions = [((2, -2), 'A'), ((2, -1), 'B'), ((4, -2), 'D'), ((4, -1), 'C'), ((6, -2), 'C'), ((6, -1), 'B'), ((8, -2), 'A'), ((8, -1), 'D')]
-    let startingPositions = [((2, -2), 'B'), ((2, -1), 'B'), ((4, -2), 'C'), ((4, -1), 'C'), ((6, -2), 'D'), ((6, -1), 'A'), ((8, -2), 'A'), ((8, -1), 'D')]
+    let startingPositions = [((2, -2), 'A'), ((2, -1), 'B'), ((4, -2), 'D'), ((4, -1), 'C'), ((6, -2), 'C'), ((6, -1), 'B'), ((8, -2), 'A'), ((8, -1), 'D')]
+    --let startingPositions = [((2, -2), 'B'), ((2, -1), 'B'), ((4, -2), 'C'), ((4, -1), 'C'), ((6, -2), 'D'), ((6, -1), 'A'), ((8, -2), 'A'), ((8, -1), 'D')]
+    print targetBurrow
     let initialBurrow = Burrow{positionMap=Map.fromList startingPositions}
     print initialBurrow
     let moveApllied = applyMove ((2, -1), (5, 0)) initialBurrow
@@ -191,6 +195,6 @@ main = do
    -- print $ getPossibleHallwayMoves (2, -1) initialBurrow
     --print $ getPossibleHallwayMoves (6, -1) moveApllied
     --print $ getPossibleHallwayMoves (2, -2) moveApllied
-    let (bestScore, prev) = getBestSequence initialBurrow
-    print bestScore
-    print $ Map.lookup targetBurrow prev
+    --let (bestScore, prev) = getBestSequence initialBurrow
+    print $ fst $ getBestSequence initialBurrow
+    --print $ Map.lookup targetBurrow prev

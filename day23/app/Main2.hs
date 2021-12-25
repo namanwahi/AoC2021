@@ -5,6 +5,8 @@ import Data.Maybe
 import Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.PQueue.Prio.Min (MinPQueue)
+import qualified Data.PQueue.Prio.Min as MinPQueue
 
 type Point = (Int, Int)
 
@@ -75,14 +77,19 @@ getPossibleHallwayMoves start@(x, y) burrow@(Burrow{positionMap=pmap})
     -- alreadt at the top
     | y == 0 = []
     -- blocked by something above
-    | y == -2 && (isOccupied burrow (x, -1)) = []
+    | (not . null) aboveOccupants = []
     -- already in the right place
-    | y == -1 && (x == getDestinationRoomX positionVal && positionVal == positionBelowVal) = []
-    | y == -2 && (x == getDestinationRoomX positionVal) = []
+    | isRoomCorrect = []
     | otherwise = (map (\x -> (start, (x, 0))). filter isNotBlocked) freeHallwayXs
     where
-        positionVal = atPosition burrow start
-        positionBelowVal = atPosition burrow (x, y-1)
+        -- can't move checks
+        aboveOccupants = (filter (\c -> c /= '.') . map (\p -> atPosition burrow p) . (\ys -> zip (repeat x) ys)) [y+1..(-1)]
+        belowOccupants = (filter (\c -> c /= '.') . map (\p -> atPosition burrow p) . (\ys -> zip (repeat x) ys)) [(-2)..y-1]
+
+        val = atPosition burrow start
+        isRoomCorrect = all (\c -> (getDestinationRoomX c) == x) (val: belowOccupants)
+
+        -- can move
         occupiedHallwayXs = (map fst. filter (\(_, y) -> y == 0) . Map.keys) pmap
         freeHallwayXs = (map fst validHallwayCoords) \\ occupiedHallwayXs
         isNotBlocked freeX
@@ -115,7 +122,7 @@ getRoomMove start@(x, 0) burrow@(Burrow{positionMap=pmap})
             | x < newX = (null . filter (\occupiedX -> x < occupiedX && occupiedX < newX)) occupiedHallwayXs
             | newX < x = (null . filter (\occupiedX -> newX < occupiedX && occupiedX < x)) occupiedHallwayXs
 getRoomMove _ _ = Nothing
-
+{--
 getBestSequence :: Burrow -> (Int, [Burrow])
 getBestSequence = getBestSequence' (0, [])
     where
@@ -128,7 +135,47 @@ getBestSequence = getBestSequence' (0, [])
                 hallwayMoves = (concat . map (\start -> getPossibleHallwayMoves start burrow). Map.keys) pmap
                 downMoves = (catMaybes . map (\start -> getRoomMove start burrow) . Map.keys) pmap
                 allMoves = downMoves ++ hallwayMoves
+--}
 
+-- key a map where you know there the key exists
+sureLookup :: Ord k => k -> Map k a -> a
+sureLookup key map = fromJust $ Map.lookup key map
+
+getNeighbours :: Burrow -> [(Burrow, Int)]
+getNeighbours burrow = map (\m -> (applyMove m burrow, moveEnergy m burrow)) allMoves
+    where
+        pmap = positionMap burrow
+        hallwayMoves = (concat . map (\start -> getPossibleHallwayMoves start burrow). Map.keys) pmap
+        downMoves = (catMaybes . map (\start -> getRoomMove start burrow) . Map.keys) pmap
+        allMoves = downMoves ++ hallwayMoves
+
+-- dijkstra path finding algorith,
+getBestSequence :: Burrow -> (Int, Map Burrow Burrow)
+getBestSequence initialBurrow@(Burrow{positionMap=pmap}) = dijkstra' (MinPQueue.singleton initialBurrow 0) (Map.singleton initialBurrow 0) (Map.empty)
+    where
+        dijkstra' :: MinPQueue Burrow Int -> Map Burrow Int -> Map Burrow Burrow -> (Int, Map Burrow Burrow)
+        dijkstra' pQueue dist prev
+            | u == targetBurrow = (distToU, prev)
+            | otherwise = dijkstra' pQueue'' dist' prev'
+            where
+                -- pop burrow U from pQueue
+                ((u, _), pQueue') = (MinPQueue.deleteFindMin pQueue)
+                -- get distance to u
+                distToU = sureLookup u dist
+                -- get next nodes (burrows and energy needed to move to them)
+                vsAndEnergy = getNeighbours u
+                vs = map fst vsAndEnergy
+                (pQueue'', dist', prev') = foldr updateState (pQueue', dist, prev) vs
+
+                updateState v (pq, d, p)
+                    | alt < (Map.findWithDefault (maxBound::Int) v d) = (updatePriority v alt pq, Map.insert v alt d, Map.insert v u p)
+                    | otherwise = (pq, d, p)
+                    where
+                        alt = distToU + (fromJust $ lookup v vsAndEnergy)
+
+                updatePriority point priority pQueue
+                    | point `elem` (MinPQueue.keysU pQueue) = MinPQueue.mapWithKey (\p oldPriority -> if p == point then priority else oldPriority) pQueue
+                    | otherwise = MinPQueue.insert point priority pQueue
 
 main :: IO ()
 main = do
@@ -144,4 +191,6 @@ main = do
    -- print $ getPossibleHallwayMoves (2, -1) initialBurrow
     --print $ getPossibleHallwayMoves (6, -1) moveApllied
     --print $ getPossibleHallwayMoves (2, -2) moveApllied
-    print $ getBestSequence initialBurrow
+    let (bestScore, prev) = getBestSequence initialBurrow
+    print bestScore
+    print $ Map.lookup targetBurrow prev
