@@ -5,6 +5,8 @@ import Data.Maybe
 import Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.PQueue.Prio.Min (MinPQueue)
 import qualified Data.PQueue.Prio.Min as MinPQueue
 
@@ -17,7 +19,7 @@ data Burrow = Burrow {
 type Move = (Point, Point)
 
 instance Show Burrow where
-    show burrow@(Burrow{positionMap=pmap}) = intercalate "\n" ([horizontalPadding] ++ rows ++ [horizontalPadding])
+    show burrow@(Burrow{positionMap=pmap}) = intercalate "\n" (["", horizontalPadding] ++ rows ++ [horizontalPadding])
         where
             maxX = (maximum . map fst) allPositions
             minY = (minimum . map snd) allPositions
@@ -59,7 +61,7 @@ isFree :: Burrow -> Point -> Bool
 isFree burr p = (atPosition burr p) == '.'
 
 roomCoords :: [Point]
-roomCoords = (concat . map (\x -> [(x, -1), (x, -2)])) [2, 4, 6, 8]
+roomCoords = (concat . map (\x -> [(x, -1), (x, -2), (x, -3), (x, -4)])) [2, 4, 6, 8]
 
 validHallwayCoords :: [Point]
 validHallwayCoords = filter (\(x, y) -> (not (x `elem` roomXCoords)) && y==0) allPositions
@@ -84,7 +86,7 @@ getPossibleHallwayMoves start@(x, y) burrow@(Burrow{positionMap=pmap})
     where
         -- can't move checks
         aboveOccupants = (filter (\c -> c /= '.') . map (\p -> atPosition burrow p) . (\ys -> zip (repeat x) ys)) [y+1..(-1)]
-        belowOccupants = (filter (\c -> c /= '.') . map (\p -> atPosition burrow p) . (\ys -> zip (repeat x) ys)) [(-2)..y-1]
+        belowOccupants = (filter (\c -> c /= '.') . map (\p -> atPosition burrow p) . (\ys -> zip (repeat x) ys)) [(-4)..y-1]
 
         val = atPosition burrow start
         isRoomCorrect = all (\c -> (getDestinationRoomX c) == x) (val: belowOccupants)
@@ -102,20 +104,19 @@ getDestinationRoomX 'B' = 4
 getDestinationRoomX 'C' = 6
 getDestinationRoomX 'D' = 8
 
-
 targetBurrow :: Burrow
 targetBurrow = Burrow{positionMap=Map.fromList targetPositions}
     where
-        targetPositions = (concat . map (\c -> zip (zip (repeat $ getDestinationRoomX c) [-2..(-1)]) (repeat c))) ['A', 'B', 'C', 'D']
+        targetPositions = (concat . map (\c -> zip (zip (repeat $ getDestinationRoomX c) [-4..(-1)]) (repeat c))) ['A', 'B', 'C', 'D']
 
 getRoomMove :: Point -> Burrow -> Maybe Move
 getRoomMove start@(x, 0) burrow@(Burrow{positionMap=pmap})
-    | isNotBlockedInHallway && allCorrect = Just (start, (newX, -2 + length occupants))
+    | isNotBlockedInHallway && allCorrect = Just (start, (newX, -4 + length occupants))
     where
         valAtStart = fromJust $ Map.lookup (x, 0) pmap
         newX = getDestinationRoomX valAtStart
 
-        occupants = (filter (/= '.') . map (\y -> atPosition burrow (newX, y))) [-2..(-1)]
+        occupants = (filter (/= '.') . map (\y -> atPosition burrow (newX, y))) [-4..(-1)]
         allCorrect = all (\c -> getDestinationRoomX c == newX) occupants
 
         occupiedHallwayXs = (map fst. filter (\(_, y) -> y == 0) . Map.keys) pmap
@@ -124,26 +125,13 @@ getRoomMove start@(x, 0) burrow@(Burrow{positionMap=pmap})
             | newX < x = (null . filter (\occupiedX -> newX < occupiedX && occupiedX < x)) occupiedHallwayXs
 getRoomMove _ _ = Nothing
 
-{--
-getBestSequence :: Burrow -> (Int, [Burrow])
-getBestSequence = getBestSequence' (0, [])
-    where
-        getBestSequence' (totalEnergy, burrows) burrow@(Burrow{positionMap=pmap})
-            | length burrows /= length (nub burrows) = error ("duplicate burrows:\n" ++ (show (reverse burrows)))
-            | burrow == targetBurrow = (totalEnergy, burrows)
-            | null allMoves          = (maxBound, burrows)
-            | otherwise              = (minimum . map (\m -> let newBurrow = applyMove m burrow in getBestSequence' (totalEnergy + moveEnergy m burrow, newBurrow: burrows) newBurrow)) allMoves
-            where
-                hallwayMoves = (concat . map (\start -> getPossibleHallwayMoves start burrow). Map.keys) pmap
-                downMoves = (catMaybes . map (\start -> getRoomMove start burrow) . Map.keys) pmap
-                allMoves = downMoves ++ hallwayMoves
---}
 
 -- key a map where you know there the key exists
 sureLookup :: Ord k => k -> Map k a -> a
 sureLookup key map = fromJust $ Map.lookup key map
 
 getNeighbours :: Burrow -> [(Burrow, Int)]
+--getNeighbours burrow = filter (\(b, _) -> b `elem` solutionBurrows) $ map (\m -> (applyMove m burrow, moveEnergy m burrow)) allMoves
 getNeighbours burrow = map (\m -> (applyMove m burrow, moveEnergy m burrow)) allMoves
     where
         pmap = positionMap burrow
@@ -153,48 +141,94 @@ getNeighbours burrow = map (\m -> (applyMove m burrow, moveEnergy m burrow)) all
 
 -- dijkstra path finding algorith,
 getBestSequence :: Burrow -> (Int, Map Burrow Burrow)
-getBestSequence initialBurrow@(Burrow{positionMap=pmap}) = dijkstra' (MinPQueue.singleton initialBurrow 0) (Map.singleton initialBurrow 0) (Map.empty)
+getBestSequence initialBurrow@(Burrow{positionMap=pmap}) = dijkstra' (MinPQueue.singleton initialBurrow 0) (Map.singleton initialBurrow 0) (Map.empty) (Set.empty)
     where
-        dijkstra' :: MinPQueue Burrow Int -> Map Burrow Int -> Map Burrow Burrow -> (Int, Map Burrow Burrow)
-        dijkstra' pQueue dist prev
+        dijkstra' :: MinPQueue Burrow Int -> Map Burrow Int -> Map Burrow Burrow -> Set Burrow -> (Int, Map Burrow Burrow)
+        dijkstra' pQueue dist prev visited
             | u == targetBurrow = (distToU, prev)
-            | otherwise = dijkstra' pQueue'' dist' prev'
+            | otherwise = dijkstra' pQueue'' dist' prev' visited'
             where
                 -- pop burrow U from pQueue
-                ((u, _), pQueue') = (MinPQueue.deleteFindMin pQueue)
-                -- get distance to u
-                distToU = sureLookup u dist
+                ((u, distToU), pQueue') = (MinPQueue.deleteFindMin pQueue)
+                -- visiting u
+                visited' = Set.insert u visited
                 -- get next nodes (burrows and energy needed to move to them)
-                vsAndEnergy = getNeighbours u
-                vs = map fst vsAndEnergy
-                (pQueue'', dist', prev') = foldr updateState (pQueue', dist, prev) vs
+                vToEnergy = filter (\(v, _) -> not (Set.member v visited')) $ getNeighbours u
+                (pQueue'', dist', prev') = foldr updateState (pQueue', dist, prev) vToEnergy
 
-                updateState v (pq, d, p)
-                    | alt <= (Map.findWithDefault (maxBound::Int) v d) = (updatePriority v alt pq, Map.insert v alt d, Map.insert v u p)
+                updateState (v, energy) (pq, d, p)
+                    | alt < (Map.findWithDefault (maxBound::Int) v d) = (updatePriority v alt pq, Map.insert v alt d, Map.insert v u p)
                     | otherwise = (pq, d, p)
                     where
-                        alt = distToU + (fromJust $ lookup v vsAndEnergy)
+                        alt = distToU + energy
 
-                updatePriority point priority pQueue
-                    | point `elem` (MinPQueue.keysU pQueue) = MinPQueue.mapWithKey (\p oldPriority -> if p == point then priority else oldPriority) pQueue
-                    | otherwise = MinPQueue.insert point priority pQueue
+                updatePriority burrow newPriority pq = MinPQueue.insert burrow newPriority (MinPQueue.filterWithKey (\b _ -> b /= burrow) pq)
 
+simulateMoves :: Burrow -> Int -> [Move] -> [(Burrow, Int)]
+simulateMoves _ _ [] = []
+simulateMoves burrow totalEnergy (move: moves) = (newBurrow, totalEnergy + energy) : (simulateMoves newBurrow (totalEnergy + energy) moves)
+    where
+        nextToEnergy = getNeighbours burrow
+        newBurrow = applyMove move burrow
+        energy = fromJust $ lookup newBurrow nextToEnergy
+
+solutionBurrows :: [Burrow]
+solutionBurrows = map fst simulateSolution
+    where
+        startingPositions = [((2, -1), 'B'), ((2, -2), 'D'), ((2, -3), 'D'), ((2, -4), 'A'), ((4, -1), 'C'), ((4, -2), 'C'), ((4, -3), 'B'), ((4, -4), 'D'),  ((6, -1), 'B'), ((6, -2), 'B'), ((6, -3), 'A'), ((6, -4), 'C'),  ((8, -1), 'D'), ((8, -2), 'A'), ((8, -3), 'C'), ((8, -4), 'A')]
+        initialBurrow = Burrow{positionMap=Map.fromList startingPositions}
+        simulateSolution = simulateMoves initialBurrow 0 solutionMoves
+
+reconstructPath :: Map Burrow Burrow -> Burrow -> [Burrow]
+reconstructPath prevs burrow
+    | Map.member burrow prevs = (reconstructPath prevs (fromJust $ Map.lookup burrow prevs)) ++ [burrow]
+    | otherwise               = []
 
 main :: IO ()
 main = do
     print allPositions
-    let startingPositions = [((2, -2), 'A'), ((2, -1), 'B'), ((4, -2), 'D'), ((4, -1), 'C'), ((6, -2), 'C'), ((6, -1), 'B'), ((8, -2), 'A'), ((8, -1), 'D')]
-    --let startingPositions = [((2, -2), 'B'), ((2, -1), 'B'), ((4, -2), 'C'), ((4, -1), 'C'), ((6, -2), 'D'), ((6, -1), 'A'), ((8, -2), 'A'), ((8, -1), 'D')]
-    print targetBurrow
+    let startingPositions = [((2, -1), 'B'), ((2, -2), 'D'), ((2, -3), 'D'), ((2, -4), 'A'), ((4, -1), 'C'), ((4, -2), 'C'), ((4, -3), 'B'), ((4, -4), 'D'),  ((6, -1), 'B'), ((6, -2), 'B'), ((6, -3), 'A'), ((6, -4), 'C'),  ((8, -1), 'D'), ((8, -2), 'A'), ((8, -3), 'C'), ((8, -4), 'A')]
+    --let startingPositions = [((2, -1), 'B'), ((2, -2), 'D'), ((2, -3), 'D'), ((2, -4), 'B'), ((4, -1), 'C'), ((4, -2), 'C'), ((4, -3), 'B'), ((4, -4), 'C'),  ((6, -1), 'A'), ((6, -2), 'B'), ((6, -3), 'A'), ((6, -4), 'D'),  ((8, -1), 'D'), ((8, -2), 'A'), ((8, -3), 'C'), ((8, -4), 'A')]
+    --print targetBurrow
     let initialBurrow = Burrow{positionMap=Map.fromList startingPositions}
     print initialBurrow
-    let moveApllied = applyMove ((2, -1), (5, 0)) initialBurrow
-    --print moveApllied
-    --print $ validHallwayCoords
-    --print $ getPossibleHallwayMoves (2, -2) initialBurrow
-   -- print $ getPossibleHallwayMoves (2, -1) initialBurrow
-    --print $ getPossibleHallwayMoves (6, -1) moveApllied
-    --print $ getPossibleHallwayMoves (2, -2) moveApllied
-    --let (bestScore, prev) = getBestSequence initialBurrow
-    print $ fst $ getBestSequence initialBurrow
-    --print $ Map.lookup targetBurrow prev
+
+    let simulateSolution = simulateMoves initialBurrow 0 solutionMoves :: [(Burrow, Int)]
+    mapM_ print (map fst simulateSolution)
+    print $ map snd simulateSolution
+    print $ sum $ map snd simulateSolution
+    let (score, prevs) = getBestSequence initialBurrow
+    let burrows = reconstructPath prevs targetBurrow
+    mapM_ print burrows
+    print $ score
+
+solutionMoves :: [Move]
+solutionMoves =
+    [((8, -1), (10, 0))
+    ,((8, -2), (0, 0))
+    ,((6, -1), (9, 0))
+    ,((6, -2), (7, 0))
+    ,((6, -3), (1, 0))
+    ,((4, -1), (5, 0))
+    ,((5, 0), (6, -3))
+    ,((4, -2), (5, 0))
+    ,((5, 0), (6, -2))
+    ,((4, -3), (5, 0))
+    ,((4, -4), (3, 0))
+    ,((5, 0), (4, -4))
+    ,((7, 0), (4, -3))
+    ,((9, 0), (4, -2))
+    ,((8, -3), (7, 0))
+    ,((7, 0), (6, -1))
+    ,((8, -4), (9, 0))
+    ,((3, 0), (8, -4))
+    ,((2, -1), (3, 0))
+    ,((3, 0), (4, -1))
+    ,((2, -2), (7, 0))
+    ,((7, 0), (8, -3))
+    ,((2, -3), (3, 0))
+    ,((1, 0), (2, -3))
+    ,((0, 0), (2, -2))
+    ,((3, 0), (8, -2))
+    ,((9, 0), (2, -1))
+    ,((10, 0), (8, -1))]
