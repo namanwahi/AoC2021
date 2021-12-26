@@ -196,7 +196,6 @@ main = do
     let simulateSolution = simulateMoves initialBurrow 0 solutionMoves :: [(Burrow, Int)]
     mapM_ print (map fst simulateSolution)
     print $ map snd simulateSolution
-    print $ sum $ map snd simulateSolution
     let (score, prevs) = getBestSequence initialBurrow
     let burrows = reconstructPath prevs targetBurrow
     mapM_ print burrows

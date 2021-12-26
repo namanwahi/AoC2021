@@ -1,5 +1,5 @@
 
-from itertools import permutations, zip_longest
+from itertools import product, zip_longest
 from typing import Dict
 
 def get_instructions():
@@ -20,15 +20,16 @@ NUM_GROUPS = 14
 
 def naive_monad(model_num):
     assert len(model_num) == 14
-    model_num = list(str(model_num))
+
+    model_num = model_num.copy()
 
     state = {'w': 0, 'x': 0, 'y': 0, 'z': 0}
-    for i, instruction in enumerate(get_instructions()[:NUM_GROUPS * 18]):
+    for i, instruction in enumerate(get_instructions()):
         operation = instruction[0]
         args = tuple(instruction[1:])
         if operation == 'inp':
             (reg,) = args
-            state[reg] = int(model_num.pop(0))
+            state[reg] = model_num.pop(0)
         elif operation == 'add':
             (reg, a) = args
             state[reg] += eval_arg(a, state)
@@ -46,36 +47,58 @@ def naive_monad(model_num):
             state[reg] = int(eval_arg(a, state) == state[reg])
         else:
             assert False, operation
-        if (NUM_GROUPS - 1) * 18 <= i <= (NUM_GROUPS + 1) * 18:
-            print(instruction, state)
     return state['z']
 
 ns = [13, 11, 15, -11, 14, 0, 12, 12, 14, -6, -10, -12, -3, -5]
-ms = [1, 1, 1, 26, 1, 26, 1, 1, 1, 26, 26, 26, 26, 26]
+ms = [1,  1,  1,   26, 1, 26, 1,  1,  1,  26, 26,  26,  26, 26]
 os = [13, 10, 5, 14, 5, 15, 4, 11, 1, 15, 12, 8, 14, 9]
-
+# when ms==1, there is no value of 1<=w<=9. Therefore it's not needed.
 def run_group(z, w, group_idx):
-    x = ((z % 26) + ns[group_idx]) != w
-
-    if x:
-        z = ((z // ms[group_idx]) * 26) + w + os[group_idx]
+    if ((z % 26) + ns[group_idx]) == w:
+        # z needs to decrease
+        assert ms[group_idx] == 26
+        newZ = (z // ms[group_idx])
     else:
-        z = (z // ms[group_idx])
+        # z needs to increase
+        assert ms[group_idx] == 1
+        newZ = ((z // ms[group_idx]) * 26) + w + os[group_idx]
 
-    return z
+    return newZ
+
 
 def fast_monad(model_num):
     assert len(model_num) == 14
-    model_num = list(str(model_num))
 
     z = 0
 
     for group_idx in range(NUM_GROUPS):
-        w = int(model_num.pop(0))
-
+        w = model_num[group_idx]
         z = run_group(z, w, group_idx)
-
     return z
+
+def valid(increase_digits):
+    z_needs_to_increase = [m == 1 for m in ms]
+    model_num = [-1] * 14
+    digits_index = 0
+
+    z = 0
+    for i in range(14):
+        if z_needs_to_increase[i]:
+            w = increase_digits[digits_index]
+            digits_index += 1
+        else:
+            w = (z % 26) + ns[i]
+            if not (1 <= w <=9):
+                return None
+
+        model_num[i] = w
+        z = run_group(z, w, i)
+
+    if z == 0:
+        return model_num
+
+    return None
+
 
 
 if __name__ == "__main__":
@@ -85,13 +108,20 @@ if __name__ == "__main__":
 
     # inspect each instruction group. They follow a pattern
     grouped_instructions = grouper(instructions, 18)
-    for i in range(group_size):
-        print("Group at index ", i)
-        for group in grouped_instructions:
-            print(group[i])
-        print("-----------")
 
-    print(naive_monad("13579246899999"))
-    print(fast_monad("13579246899999"))
+    # part 1
+    for increase_digits in product(range(9, 0, -1), repeat=7):
+        model_num = valid(increase_digits)
+        if model_num:
+            print("".join(map(str,model_num)))
+            break
 
+    # part 2
+    for increase_digits in product(range(1, 10), repeat=7):
+        model_num = valid(increase_digits)
+        if model_num:
+            print("".join(map(str,model_num)))
+            break
 
+    z = fast_monad(model_num)
+    print(z)
